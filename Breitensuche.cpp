@@ -8,7 +8,7 @@
 #include <queue>
 #include <list>
 
-#define MAX_QUEUE = 100
+#define MAX_QUEUE  100
 
 using namespace std;
 
@@ -54,18 +54,23 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
     printf("Breitensuche wird gestartet... \n");
 
     //Initialisierung
-    list<int> inQ;
-    list<int> outQ;
+    int *inQ = (int*)malloc(sizeof(int)*MAX_QUEUE);
+    int *outQ = (int*)malloc(sizeof(int)*MAX_QUEUE);
+    int *help;
+    int counterIn = 0; //counters always point to the next free space in array
+    int counterOut = 0;
+
     int iteration = 0;
     #pragma omp parallel for default(none)  shared(distance,R_size)
-    for(int i=0; i<R_size;i++) {
+    for(int i=0; i<R_size-1;i++) {
         distance[i] = INT_MAX;
     }
     distance[starting_node] = 0;
-    inQ.push_back(starting_node);
+    inQ[counterIn] = starting_node;
+    counterIn++;
 
     printf("Distanzen bei Initialisierung: \n");
-    for (int i = 0; i< R_size; i++ ) {
+    for (int i = 0; i< R_size-1; i++ ) {
         printf("%d," ,distance[i]);
     }
     printf("\n");
@@ -74,41 +79,49 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
     //Start des Algos
     //nur Arrays mit max. Breite
     
-    while (!inQ.empty()) {
+    while (counterIn != 0) {
+        //----------------------------------------------------------------------------------------hier war ich 
 
-        //copy elements from list to array. All elements will be processed in parallel
-        int currentNodes [100] = {}; //hier sollte eigentlich inQ.size() als Größe sein
-        int counter = 0;
-        while(!inQ.empty()) {  //nicht mehr als threads
-            currentNodes [counter] = inQ.front();
-            inQ.pop_front();
-            counter++;
-        }
         //all nodes in Queue in parallel
-        #pragma omp parallel for default(none)  shared(C,R,distance,outQ,counter,iteration,currentNodes)
-        for(int j=0; j < counter; j++) {
-            int current_node = currentNodes[j];
+        #pragma omp parallel for default(none)  shared(C,R,distance,inQ,outQ,counterIn,counterOut,iteration)
+        for(int j=0; j < counterIn; j++) {
+            int current_node = inQ[j];
             //for all neighbours of node
             for(int i=R[current_node]; i<R[current_node+1]; i++) {
                 int new_node = C[i];
                 if(distance[new_node] == INT_MAX) {
                     distance[new_node] = iteration + 1;
-                    outQ.push_back(new_node); //hier dann in outArray, und counter++ schützen
+                    #pragma omp critical //hier vielleicht atomic?? Geht das?
+                    {
+                    outQ[counterOut] = new_node;
+                    counterOut++;
+                    }
                 }
             }  
         }
         iteration++;
         // inQ = outQ 
-        // keine schöne Lösung: Vielleicht: delete InQ, dann pointer ändern inQ = outQ, dann clear outQ
-        // arrays und pointer auf arrays tauschen
-        while (!outQ.empty()) {
-            inQ.push_back(outQ.front());
-            outQ.pop_front();
+        help = inQ;
+        inQ = outQ;
+        outQ = help;
+        counterIn = counterOut;
+        counterOut = 0;
+        //---------------------------------------------------------
+        printf("Distanzen Beginn Iteration %d: \n",iteration);
+        for (int i = 0; i< R_size-1; i++ ) {
+            printf("%d," ,distance[i]);
         }
-    
+        printf("\n");
+        printf("Inhalt der InQ: \t");
+        for (int i = 0; i< counterIn; i++ ) {
+            printf("%d," ,inQ[i]);
+        }
+        printf("\n-----------------------------------------------------------------------------------------------------------------------------------------------------------------------\n");
     }
-
+    
 }
+
+
 
 
 //--------------------------------------------------------------------------------------------
