@@ -1,0 +1,15 @@
+Knoten Nr. 0     hat Distanz 0.
+Knoten Nr. 1     hat Distanz 1.
+Knoten Nr. 2     hat Distanz 1.
+Knoten Nr. 3     hat Distanz 3.
+Knoten Nr. 4     hat Distanz 2.
+Knoten Nr. 5     hat Distanz 4.
+Knoten Nr. 6     hat Distanz 7.
+Knoten Nr. 7     hat Distanz 5.
+Knoten Nr. 8     hat Distanz 6.
+Knoten Nr. 9     hat Distanz 2.
+Knoten Nr. 10    hat Distanz 3.
+Knoten Nr. 11    hat Distanz 4.
+Knoten Nr. 12    hat Distanz 3.
+Knoten Nr. 13    hat Distanz 4.
+Knoten Nr. 14    hat Distanz 5.

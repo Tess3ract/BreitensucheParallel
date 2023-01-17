@@ -8,7 +8,7 @@
 #include <queue>
 #include <list>
 
-#define MAX_QUEUE  100
+#define MAX_QUEUE_SIZE  100
 
 using namespace std;
 
@@ -54,8 +54,8 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
     printf("Breitensuche wird gestartet... \n");
 
     //Initialisierung
-    int *inQ = (int*)malloc(sizeof(int)*MAX_QUEUE);
-    int *outQ = (int*)malloc(sizeof(int)*MAX_QUEUE);
+    int *inQ = (int*)malloc(sizeof(int)*MAX_QUEUE_SIZE);
+    int *outQ = (int*)malloc(sizeof(int)*MAX_QUEUE_SIZE);
     int *help;
     int counterIn = 0; //counters always point to the next free space in array
     int counterOut = 0;
@@ -77,8 +77,6 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
 
 
     //Start des Algos
-    //nur Arrays mit max. Breite
-    
     while (counterIn != 0) {
         //----------------------------------------------------------------------------------------hier war ich 
 
@@ -107,7 +105,7 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
         counterIn = counterOut;
         counterOut = 0;
         //---------------------------------------------------------
-        printf("Distanzen Beginn Iteration %d: \n",iteration);
+        printf("Distanzen Ende Iteration %d: \n",iteration-1);
         for (int i = 0; i< R_size-1; i++ ) {
             printf("%d," ,distance[i]);
         }
