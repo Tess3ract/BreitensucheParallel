@@ -6,12 +6,102 @@
 #include <chrono>
 #include <random>
 #include <queue>
-#include <list>
+#include <fstream>
 
 #define MAX_QUEUE_SIZE  100
 
 using namespace std;
 
+class CSR_Format {
+    public:
+    int *C;
+    int cSize;
+    int *R;
+    int rSize;
+};
+
+//read current line and store it in source and destination
+void readLine(string line,  int *source, int *destination ,string deli = " ")
+{
+    int start = 0;
+    int end = line.find(deli);
+    *destination = stoi(line.substr(start, end - start));
+    start = end + deli.size();
+    end = line.find(deli, start);
+    *source = stoi(line.substr(start, end - start));
+    return;
+}
+
+
+
+//read graph in Matrix Market format
+// format: <destination> <source> <weight>
+// lines have to be sorted by source ascending
+CSR_Format readGraph(string path) {
+    ifstream Preparation(path);
+    string line;
+    int lineCounter = 0;
+    int max=0;
+    int source;
+    int destination;
+
+    //get number of nodes and edges
+    while(getline(Preparation,line)) {
+        if (line[0] =='%') {
+            continue;
+        }
+        lineCounter++;
+        readLine(line, &source, &destination);
+        if(max < source) {max=source;}
+        if(max < destination) {max=destination;}         
+    }
+
+    //preparation
+    int cSize = lineCounter; //number of lines = number of edges = size of C
+    int *C = (int*)malloc(sizeof(int)*cSize); 
+    int cCounter=0;
+
+    int rSize = max+2; // max+1  nodes => size of R is max+2
+    int *R = (int*)malloc(sizeof(int)*rSize);       
+    int rCounter=0;
+    R[rCounter]=0;
+    rCounter++;
+    ifstream Graph(path);
+    int lastSource=0;
+    lineCounter = 0;
+
+    //main part
+    //for each line
+    while(getline(Graph,line)) {
+        if (line[0] =='%') {
+            continue;
+        }
+        //read current line and store it in source and destination
+        readLine(line,&source,&destination);
+
+        //transform into CSR format
+        while(lastSource<source) {
+            R[rCounter] = lineCounter;
+            rCounter++;
+            lastSource++;
+        }
+        //here is lastSource == source, R up to date
+        C[cCounter] = destination;
+        cCounter++;
+
+
+        lineCounter++;
+        if(lineCounter>50) {
+            break;
+        }
+    }
+    CSR_Format result = CSR_Format();
+    result.C=C;
+    result.cSize=cSize;
+    result.R=R;
+    result.rSize=rSize; 
+    return result;
+}
 
 //--------------------------------------------------------------------------------------------
 //input is a graph in csr format
@@ -146,9 +236,11 @@ int main() {
     int C2[24] = {1,2,2,9,4,1,4,5,11,3,7,10,8,8,6,7,1,10,12,9,13,13,14,13};
     int R2[16] = {0,2,4,5,9,10,12,13,14,16,19,21,21,22,23,24};
     int distance2[15] = {};
+    CSR_Format  graph2 = readGraph("Beispielgraph.mtx");
     //execution
     //zeitmesser(0,C1,R1,11,10,distance1,breitensucheMulticore);
-    zeitmesser(0,C2,R2,24,16,distance2,breitensucheMulticore);
+    //zeitmesser(0,C2,R2,24,16,distance2,breitensucheMulticore);
+    zeitmesser(0,graph2.C,graph2.R,graph2.cSize,graph2.rSize,distance2 ,breitensucheMulticore);
     
     //result
     printf("Ergebnis der Breitensuche: \n");
