@@ -8,7 +8,7 @@
 #include <queue>
 #include <fstream>
 
-#define MAX_QUEUE_SIZE  100
+#define MAX_QUEUE_SIZE  1000000
 
 using namespace std;
 
@@ -91,9 +91,6 @@ CSR_Format readGraph(string path) {
 
 
         lineCounter++;
-        if(lineCounter>50) {
-            break;
-        }
     }
     CSR_Format result = CSR_Format();
     result.C=C;
@@ -159,11 +156,6 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
     inQ[counterIn] = starting_node;
     counterIn++;
 
-    printf("Distanzen bei Initialisierung: \n");
-    for (int i = 0; i< R_size-1; i++ ) {
-        printf("%d," ,distance[i]);
-    }
-    printf("\n");
 
 
     //Start des Algos
@@ -195,16 +187,18 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
         counterIn = counterOut;
         counterOut = 0;
         //---------------------------------------------------------
-        printf("Distanzen Ende Iteration %d: \n",iteration-1);
-        for (int i = 0; i< R_size-1; i++ ) {
-            printf("%d," ,distance[i]);
+        if(counterIn>MAX_QUEUE_SIZE){
+            cout << "Error MAX_QUEUE_SIZE überschritten!";
         }
-        printf("\n");
+        printf("Ende Iteration %d: \n",iteration-1);
+        printf("InQ size: %d \n",counterIn);
+        /*
         printf("Inhalt der InQ: \t");
         for (int i = 0; i< counterIn; i++ ) {
             printf("%d," ,inQ[i]);
         }
         printf("\n-----------------------------------------------------------------------------------------------------------------------------------------------------------------------\n");
+        **/
     }
     
 }
@@ -236,20 +230,24 @@ int main() {
     int C2[24] = {1,2,2,9,4,1,4,5,11,3,7,10,8,8,6,7,1,10,12,9,13,13,14,13};
     int R2[16] = {0,2,4,5,9,10,12,13,14,16,19,21,21,22,23,24};
     int distance2[15] = {};
-    CSR_Format  graph2 = readGraph("Beispielgraph.mtx");
+    //CSR_Format  graph2 = readGraph("Beispielgraph.mtx");
     //execution
     //zeitmesser(0,C1,R1,11,10,distance1,breitensucheMulticore);
     //zeitmesser(0,C2,R2,24,16,distance2,breitensucheMulticore);
-    zeitmesser(0,graph2.C,graph2.R,graph2.cSize,graph2.rSize,distance2 ,breitensucheMulticore);
+    //zeitmesser(0,graph2.C,graph2.R,graph2.cSize,graph2.rSize,distance2 ,breitensucheMulticore);
+
+    CSR_Format  cage15 = readGraph("cage15\\cage15.mtx");
+    int *distanceCage15 = (int*) malloc(sizeof(int)*cage15.rSize-1);
+    zeitmesser(1,cage15.C,cage15.R,cage15.cSize,cage15.rSize,distanceCage15 ,breitensucheMulticore);
     
     //result
     printf("Ergebnis der Breitensuche: \n");
-    for(int i=0; i< sizeof(distance2) / sizeof(int);i++) {
-        printf("Knoten Nr. %d \t hat Distanz %d. \n",i,distance2[i]);
+    for(int i=0; i< 1000;i++) {
+        printf("Knoten Nr. %d \t hat Distanz %d. \n",i,distanceCage15[i]);
     }
 
     /*
-    for(int i=0; i< sizeof(distance1) / sizeof(int);i++) {
+    for(int i=0; i< sizeof(distance1) / sizeof(int);i++) { 
         printf("Knoten Nr. %d \t hat Distanz %d. \n",i,distance1[i]);
     }
     **/
