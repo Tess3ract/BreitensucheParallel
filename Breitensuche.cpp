@@ -8,7 +8,8 @@
 #include <queue>
 #include <fstream>
 
-#define MAX_QUEUE_SIZE  1000000
+#define MAX_QUEUE_SIZE  5154859
+#define INT_MAX 5154859
 
 using namespace std;
 
@@ -29,10 +30,11 @@ void readLine(string line,  int *source, int *destination ,string deli = " ")
     start = end + deli.size();
     end = line.find(deli, start);
     *source = stoi(line.substr(start, end - start));
-    return;
+
 }
 
 
+//Bedingung für die Nodes...
 
 //read graph in Matrix Market format
 // format: <destination> <source> <weight>
@@ -159,11 +161,15 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
 
 
     //Start des Algos
+    //parallel ab hier probieren
     while (counterIn != 0) {
         //----------------------------------------------------------------------------------------hier war ich 
 
+        //chunk size abhängig von counterIn große
+        //schedule abhängig von counterIn große: dynamic, guided
         //all nodes in Queue in parallel
-        #pragma omp parallel for default(none)  shared(C,R,distance,inQ,outQ,counterIn,counterOut,iteration)
+        // pragma omp for instead
+        #pragma omp parallel for default(none)  shared(C,R,distance,inQ,outQ,counterIn,counterOut,iteration) schedule(dynamic)
         for(int j=0; j < counterIn; j++) {
             int current_node = inQ[j];
             //for all neighbours of node
@@ -171,10 +177,10 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
                 int new_node = C[i];
                 if(distance[new_node] == INT_MAX) {
                     distance[new_node] = iteration + 1;
-                    #pragma omp critical //hier vielleicht atomic?? Geht das?
+                    #pragma omp critical //hier vielleicht atomic?? Geht das? //atomic capture {localcounter = counterOut++}
                     {
-                    outQ[counterOut] = new_node;
-                    counterOut++;
+                        outQ[counterOut] = new_node;
+                        counterOut++;
                     }
                 }
             }  
@@ -190,8 +196,8 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
         if(counterIn>MAX_QUEUE_SIZE){
             cout << "Error MAX_QUEUE_SIZE überschritten!";
         }
-        printf("Ende Iteration %d: \n",iteration-1);
-        printf("InQ size: %d \n",counterIn);
+        // printf("Ende Iteration %d: \n",iteration-1);
+        // printf("InQ size: %d \n",counterIn);
         /*
         printf("Inhalt der InQ: \t");
         for (int i = 0; i< counterIn; i++ ) {
@@ -213,7 +219,9 @@ void zeitmesser(int starting_node,int C[], int R[], int C_size, int R_size, int 
     function(starting_node,C,R,C_size,R_size,distance);
     auto stop = chrono::high_resolution_clock::now();
     auto duration = chrono::duration_cast<chrono::microseconds>(stop - start);
-    printf("Die Laufzeit der Funktion ist %d Mikrosekunden. \n", duration);
+    double duration_mili = duration.count()/60000.0;
+    cout <<  "Die Laufzeit der Funktion ist " << duration_mili/1000.0 << " Mikrosekunden.\n";
+    // printf("Die Laufzeit der Funktion ist %ld Mikrosekunden. \n", duration.count());
 }
 
 
@@ -236,13 +244,15 @@ int main() {
     //zeitmesser(0,C2,R2,24,16,distance2,breitensucheMulticore);
     //zeitmesser(0,graph2.C,graph2.R,graph2.cSize,graph2.rSize,distance2 ,breitensucheMulticore);
 
-    CSR_Format  cage15 = readGraph("cage15\\cage15.mtx");
+    // CSR_Format  cage15 = readGraph("Beispielgraph.mtx");
+    CSR_Format  cage15 = readGraph("cage15/cage15.mtx");
+    cout<< "The graph has been read successfully\n";
     int *distanceCage15 = (int*) malloc(sizeof(int)*cage15.rSize-1);
     zeitmesser(1,cage15.C,cage15.R,cage15.cSize,cage15.rSize,distanceCage15 ,breitensucheMulticore);
     
     //result
     printf("Ergebnis der Breitensuche: \n");
-    for(int i=0; i< 1000;i++) {
+    for(int i=0; i< 14;i++) {
         printf("Knoten Nr. %d \t hat Distanz %d. \n",i,distanceCage15[i]);
     }
 
