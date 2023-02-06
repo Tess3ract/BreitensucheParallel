@@ -7,6 +7,7 @@
 #include <random>
 #include <queue>
 #include <fstream>
+#include <algorithm>
 
 #define MAX_QUEUE_SIZE  1000000
 #define INT_MAX 2147483647
@@ -149,6 +150,7 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
     int counterIn = 0; //counters always point to the next free space in array
     int counterOut = 0;
     int privateCounter =0; //private counter for each thread
+    int doublesCounter = 0; //to count nodes that are in the Q more than once
 
     int iteration = 0;
     #pragma omp parallel for default(none)  shared(distance,R_size)
@@ -163,7 +165,7 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
 
     //Start des Algos
 
-    #pragma omp parallel default(none)  shared(C,R,distance,inQ,outQ,counterIn,counterOut,iteration,help) private(privateCounter)
+    #pragma omp parallel default(none)  shared(C,R,distance,inQ,outQ,counterIn,counterOut,iteration,help, doublesCounter) private(privateCounter)
     {
     while (counterIn != 0) {
         //----------------------------------------------------------------------------------------hier war ich 
@@ -204,14 +206,22 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
         outQ = help;
         counterIn = counterOut;
         counterOut = 0;
-        //doppelte Knoten in inQ?
         //---------------------------------------------------------
         if(counterIn>MAX_QUEUE_SIZE){
             printf("Error MAX_QUEUE_SIZE überschritten!");
         }
+        //doppelte Knoten in inQ?
+        sort(inQ,inQ+counterIn);
+        for(int i=0;i<counterIn-1;i++){
+            if(inQ[i]==inQ[i+1]){
+                doublesCounter++;
+            }
+        }
+
     
         printf("Ende Iteration %d: \n",iteration-1);
         printf("InQ size: %d \n",counterIn);
+        printf("Anzahl doppelt eingefügter Knoten %d. \n",doublesCounter);
 
         
         /*
@@ -224,6 +234,7 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
         }
     }
     }
+    
     
 }
 
@@ -280,6 +291,5 @@ int main() {
         printf("Knoten Nr. %d \t hat Distanz %d. \n",i,distance1[i]);
     }
     **/
-
     return 0;
 }
