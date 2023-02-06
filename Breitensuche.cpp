@@ -8,8 +8,8 @@
 #include <queue>
 #include <fstream>
 
-#define MAX_QUEUE_SIZE  5154859
-#define INT_MAX 5154859
+#define MAX_QUEUE_SIZE  1000000
+#define INT_MAX 2147483647
 
 using namespace std;
 
@@ -148,6 +148,7 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
     int *help;
     int counterIn = 0; //counters always point to the next free space in array
     int counterOut = 0;
+    int privateCounter =0; //private counter for each thread
 
     int iteration = 0;
     #pragma omp parallel for default(none)  shared(distance,R_size)
@@ -161,30 +162,41 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
 
 
     //Start des Algos
-    //parallel ab hier probieren
+
+    #pragma omp parallel default(none)  shared(C,R,distance,inQ,outQ,counterIn,counterOut,iteration,help) private(privateCounter)
+    {
     while (counterIn != 0) {
         //----------------------------------------------------------------------------------------hier war ich 
 
-        //chunk size abhängig von counterIn große
-        //schedule abhängig von counterIn große: dynamic, guided
+        //chunk size abhängig von counterIn
+        //schedule abhängig von counterIn: klein/mittel -> dynamic, groß -> guided
         //all nodes in Queue in parallel
-        // pragma omp for instead
-        #pragma omp parallel for default(none)  shared(C,R,distance,inQ,outQ,counterIn,counterOut,iteration) schedule(dynamic)
+        //counterIn / omp_get_num_threads()
+        #pragma omp for private(privateCounter) schedule(dynamic)
         for(int j=0; j < counterIn; j++) {
             int current_node = inQ[j];
             //for all neighbours of node
+            //pragma omp for ab hier, mal probieren, wahrscheinlich weniger Parallelität
             for(int i=R[current_node]; i<R[current_node+1]; i++) {
                 int new_node = C[i];
                 if(distance[new_node] == INT_MAX) {
+                    //omp_lock_t writelock [16] ....
+                    //mit array von locks (nur nötig, wenn doppelte Einträge in Queue)
+                    //new node % 32 ergibt locknummer (hashing)
+                    //lock anfragen und nochmal distance[new_node] == INT_MAX prüfen
                     distance[new_node] = iteration + 1;
-                    #pragma omp critical //hier vielleicht atomic?? Geht das? //atomic capture {localcounter = counterOut++}
+                    #pragma omp atomic capture
                     {
-                        outQ[counterOut] = new_node;
+                        privateCounter = counterOut;
                         counterOut++;
                     }
+                    outQ[privateCounter] = new_node;
+                    //unlock
                 }
             }  
         }
+        #pragma omp single
+        {
         iteration++;
         // inQ = outQ 
         help = inQ;
@@ -192,12 +204,16 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
         outQ = help;
         counterIn = counterOut;
         counterOut = 0;
+        //doppelte Knoten in inQ?
         //---------------------------------------------------------
         if(counterIn>MAX_QUEUE_SIZE){
-            cout << "Error MAX_QUEUE_SIZE überschritten!";
+            printf("Error MAX_QUEUE_SIZE überschritten!");
         }
-        // printf("Ende Iteration %d: \n",iteration-1);
-        // printf("InQ size: %d \n",counterIn);
+    
+        printf("Ende Iteration %d: \n",iteration-1);
+        printf("InQ size: %d \n",counterIn);
+
+        
         /*
         printf("Inhalt der InQ: \t");
         for (int i = 0; i< counterIn; i++ ) {
@@ -205,6 +221,8 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
         }
         printf("\n-----------------------------------------------------------------------------------------------------------------------------------------------------------------------\n");
         **/
+        }
+    }
     }
     
 }
@@ -244,15 +262,16 @@ int main() {
     //zeitmesser(0,C2,R2,24,16,distance2,breitensucheMulticore);
     //zeitmesser(0,graph2.C,graph2.R,graph2.cSize,graph2.rSize,distance2 ,breitensucheMulticore);
 
-    // CSR_Format  cage15 = readGraph("Beispielgraph.mtx");
+    //CSR_Format  cage15 = readGraph("Beispielgraph.mtx");
     CSR_Format  cage15 = readGraph("cage15/cage15.mtx");
     cout<< "The graph has been read successfully\n";
     int *distanceCage15 = (int*) malloc(sizeof(int)*cage15.rSize-1);
     zeitmesser(1,cage15.C,cage15.R,cage15.cSize,cage15.rSize,distanceCage15 ,breitensucheMulticore);
+    //zeitmesser(0,cage15.C,cage15.R,cage15.cSize,cage15.rSize,distance2 ,breitensucheMulticore);
     
     //result
     printf("Ergebnis der Breitensuche: \n");
-    for(int i=0; i< 14;i++) {
+    for(int i=49800; i< 50000;i++) {
         printf("Knoten Nr. %d \t hat Distanz %d. \n",i,distanceCage15[i]);
     }
 
