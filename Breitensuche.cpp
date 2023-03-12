@@ -238,6 +238,112 @@ void breitensucheMulticore(int starting_node,int C[], int R[], int C_size, int R
     
 }
 
+void breitensucheMulticoreLock(int starting_node,int C[], int R[], int C_size, int R_size, int distance[]) {
+    printf("Breitensuche wird gestartet... \n");
+
+    //Initialisierung
+    int *inQ = (int*)malloc(sizeof(int)*MAX_QUEUE_SIZE);
+    int *outQ = (int*)malloc(sizeof(int)*MAX_QUEUE_SIZE);
+    int *help;
+    int counterIn = 0; //counters always point to the next free space in array
+    int counterOut = 0;
+    int privateCounter =0; //private counter for each thread
+    int doublesCounter = 0; //to count nodes that are in the Q more than once
+
+    int iteration = 0;
+    #pragma omp parallel for default(none)  shared(distance,R_size)
+    for(int i=0; i<R_size-1;i++) {
+        distance[i] = INT_MAX;
+    }
+    distance[starting_node] = 0;
+    inQ[counterIn] = starting_node;
+    counterIn++;
+
+
+
+    //Start des Algos
+    omp_lock_t writelock_1, writelock_2, writelock_3, writelock_4,writelock_5,writelock_6,writelock_7,writelock_8;
+    omp_lock_t *writeLock = (omp_lock_t*)malloc(sizeof(omp_lock_t)*64);
+    for(int i=0;i<64;i++) {
+        omp_init_lock(writeLock+i);
+    }
+
+    #pragma omp parallel default(none)  shared(C,R,distance,inQ,outQ,counterIn,counterOut,iteration,help, doublesCounter,writeLock) private(privateCounter)
+    {
+    while (counterIn != 0) {
+        //----------------------------------------------------------------------------------------hier war ich 
+
+        //chunk size abhängig von counterIn
+        //schedule abhängig von counterIn: klein/mittel -> dynamic, groß -> guided
+        //all nodes in Queue in parallel
+        //counterIn / omp_get_num_threads()
+        #pragma omp for private(privateCounter) schedule(dynamic)
+        for(int j=0; j < counterIn; j++) {
+            int current_node = inQ[j];
+            //for all neighbours of node
+            //pragma omp for ab hier, mal probieren, wahrscheinlich weniger Parallelität
+            for(int i=R[current_node]; i<R[current_node+1]; i++) {
+                int new_node = C[i];
+                if(distance[new_node] == INT_MAX) {
+                    omp_set_lock(writeLock+(new_node % 64));
+                    //mit array von locks (nur nötig, wenn doppelte Einträge in Queue)
+                    //new node % 32 ergibt locknummer (hashing)
+                    //lock anfragen und nochmal distance[new_node] == INT_MAX prüfen
+                    if(distance[new_node] == INT_MAX) {
+                        distance[new_node] = iteration + 1;
+                    
+                    #pragma omp atomic capture
+                    {
+                        privateCounter = counterOut;
+                        counterOut++;
+                    }
+                    outQ[privateCounter] = new_node;
+                    }
+                    omp_unset_lock(writeLock+(new_node % 64));
+                }
+            }  
+        }
+        #pragma omp single
+        {
+        iteration++;
+        // inQ = outQ 
+        help = inQ;
+        inQ = outQ;
+        outQ = help;
+        counterIn = counterOut;
+        counterOut = 0;
+        //---------------------------------------------------------
+        if(counterIn>MAX_QUEUE_SIZE){
+            printf("Error MAX_QUEUE_SIZE überschritten!");
+        }
+        //doppelte Knoten in inQ?
+        sort(inQ,inQ+counterIn);
+        for(int i=0;i<counterIn-1;i++){
+            if(inQ[i]==inQ[i+1]){
+                doublesCounter++;
+            }
+        }
+
+    
+        printf("Ende Iteration %d: \n",iteration-1);
+        printf("InQ size: %d \n",counterIn);
+        printf("Anzahl doppelt eingefügter Knoten %d. \n",doublesCounter);
+
+        
+        /*
+        printf("Inhalt der InQ: \t");
+        for (int i = 0; i< counterIn; i++ ) {
+            printf("%d," ,inQ[i]);
+        }
+        printf("\n-----------------------------------------------------------------------------------------------------------------------------------------------------------------------\n");
+        **/
+        }
+    }
+    }
+    
+    
+}
+
 
 
 
@@ -278,13 +384,11 @@ int main() {
     cout<< "The graph has been read successfully\n";
     int *distanceCage15 = (int*) malloc(sizeof(int)*cage15.rSize-1);
     zeitmesser(1,cage15.C,cage15.R,cage15.cSize,cage15.rSize,distanceCage15 ,breitensucheMulticore);
+    zeitmesser(1,cage15.C,cage15.R,cage15.cSize,cage15.rSize,distanceCage15 ,breitensucheMulticoreLock);
     //zeitmesser(0,cage15.C,cage15.R,cage15.cSize,cage15.rSize,distance2 ,breitensucheMulticore);
     
     //result
-    printf("Ergebnis der Breitensuche: \n");
-    for(int i=49800; i< 50000;i++) {
-        printf("Knoten Nr. %d \t hat Distanz %d. \n",i,distanceCage15[i]);
-    }
+
 
     /*
     for(int i=0; i< sizeof(distance1) / sizeof(int);i++) { 
