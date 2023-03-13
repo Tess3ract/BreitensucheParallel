@@ -87,11 +87,11 @@ int main() {
 
 void run(){
 
-    // CSR_Format  cage15 = readGraph("Beispielgraph.mtx");
-    CSR_Format  cage15 = readGraph("cage15/cage15.mtx");
+    CSR_Format  cage15 = readGraph("Beispielgraph.mtx");
+    // CSR_Format  cage15 = readGraph("cage15/cage15.mtx");
     cout<< "The graph has been read successfully\n";
 
-    const int startingNode = 1;   
+    const int startingNode = 0;   
     const int sizeInt = sizeof(int);
 
     GraphData graphData = allocateGraphData(cage15, sizeInt);
@@ -121,37 +121,50 @@ void breitensucheCUDA(int startingNode, GraphData graphData, QueueData queueData
 
     int numThreads = 0;
     int numBlocks = 0;
+
+    int *host_counterIn = (int*) malloc(sizeInt);
+    checkHostAllocation(host_counterIn, "host_counterIn");
+    int *host_counterOut = (int*) malloc(sizeInt);
+    checkHostAllocation(host_counterOut, "host_counterOut");
+    *host_counterIn = 1;
+    *host_counterOut = 0;
+
+    // int *host_counterIn;
+    // cudaMallocManaged((void**)&host_counterIn, sizeInt);
+    // checkCudaError(cudaMemset(host_counterIn, 0, sizeInt), "cudaMemset host_counterIn failed");
+    // int *host_counterOut;
+    // cudaMallocManaged((void**)&host_counterOut, sizeInt);
+    // checkCudaError(cudaMemset(host_counterOut, 0, sizeInt), "cudaMemset host_counterOut failed");
     
     int *dev_inQ = queueData.inQ;
-    // Kopiert den Startknoten in die dev_inQ auf das Gerät. dev_inQ[0] = sartingNode
     checkCudaError(cudaMemcpyAsync(dev_inQ, &startingNode, sizeInt, cudaMemcpyHostToDevice), 
         "cudaMemcpy startingNode => d_inQ failed"
     );
 
-    // Erstellt einen CUDA-Stream
-    //Es ermöglicht Datenübertragungs- und Kernelausführungsoperationen zu überlappen
-    cudaStream_t stream;
-    cudaStreamCreate(&stream);
+    // cudaStream_t stream;
+    // cudaStreamCreate(&stream);
 
-    // Setzt den Eingangs- und Ausgangszähler
-    *queueData.counterIn = 1;
-    *queueData.counterOut = 0;
+    while (*host_counterIn > 0) {
+        numThreads = min(*host_counterIn, MAX_THREADS_PER_BLOCK);
+        numBlocks = (*host_counterIn + numThreads-1) / numThreads;
 
-    // Solange es noch Knoten in der Eingangswarteschlange gibt
-    while (*queueData.counterIn > 0) {
-        // Berechnet die Anzahl der Threads und Blöcke
-        numThreads = min(*queueData.counterIn, MAX_THREADS_PER_BLOCK);
-        numBlocks = (*queueData.counterIn + numThreads-1) / numThreads;
+        cudaMemcpy(queueData.counterIn, host_counterIn, sizeInt, cudaMemcpyHostToDevice);
+        cudaMemcpy(queueData.counterOut, host_counterOut, sizeInt, cudaMemcpyHostToDevice);
 
-        // Führt die Breitensuche auf dem Gerät aus
         breitensucheGPU<<<numBlocks, numThreads>>>(startingNode, graphData, queueData);
-        // Synchronisiert die Geräteausführung
         checkCudaError(cudaDeviceSynchronize(), "CUDA kernel failed to synchronize");
+    
+        cudaMemcpy(host_counterIn, queueData.counterIn, sizeInt, cudaMemcpyDeviceToHost);
+        cudaMemcpy(host_counterOut, queueData.counterOut, sizeInt, cudaMemcpyDeviceToHost);
+        
 
-        // Vertauscht die Eingangs- und Ausgangswarteschlange sowie setzt die counterIn und counterOut
-        swapQueues(&queueData.inQ, &queueData.outQ, queueData.counterIn, queueData.counterOut);
+        swapQueues(&queueData.inQ, &queueData.outQ, host_counterIn, host_counterOut);
+        
+        //sleep(1);
     }
-    cudaStreamDestroy(stream);
+    // cudaStreamDestroy(stream);
+    free(host_counterIn);
+    free(host_counterOut);
 }
 
 
@@ -209,11 +222,8 @@ QueueData allocateQueueData(int queueSize, int sizeInt){
     // Allocate device memory for the queue data
     checkCudaError(cudaMalloc(&devQueueData.inQ, queueSize * sizeInt), "cudaMalloc d_inQ failed");
     checkCudaError(cudaMalloc(&devQueueData.outQ, queueSize * sizeInt), "cudaMalloc d_outQ failed");
-
-    checkCudaError(cudaMallocManaged(&devQueueData.counterIn, sizeInt), "cudaMalloc d_counterIn failed");
-    checkCudaError(cudaMemset(devQueueData.counterIn, 0, sizeInt), "cudaMemset devQueueData.counterIn failed");
-    checkCudaError(cudaMallocManaged(&devQueueData.counterOut, sizeInt), "cudaMalloc d_counterOut failed");
-    checkCudaError(cudaMemset(devQueueData.counterOut, 0, sizeInt), "cudaMemset devQueueData.counterOut failed");
+    checkCudaError(cudaMalloc(&devQueueData.counterIn, sizeInt), "cudaMalloc d_counterIn failed");
+    checkCudaError(cudaMalloc(&devQueueData.counterOut, sizeInt), "cudaMalloc d_counterOut failed");
     return devQueueData;
 }
 
