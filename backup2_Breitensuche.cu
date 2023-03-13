@@ -66,88 +66,66 @@ __device__ int dequeue() {
 }
 
 
-__device__ void swapQueues(int *s_inQ[], int *s_outQ[], int *s_counterIn, int *s_counterOut) {
-    // int tmp[MAX_QUEUE_SIZE];
-    // //mit pointer probieren
-    // memcpy(tmp, s_inQ, s_counterIn * sizeof(int));
-    // memcpy(s_inQ, s_outQ, s_counterOut * sizeof(int));
-    // memcpy(s_outQ, tmp, s_counterIn * sizeof(int));
+__device__ void swapQueues(int *s_inQ, int *s_outQ, int &s_counterIn, int &s_counterOut) {
+    int tmp[MAX_QUEUE_SIZE];
 
-    int *temp;
-    temp = *s_outQ;
-    *s_outQ = *s_inQ;
-    *s_inQ = temp;
-
-    *s_counterIn = *s_counterOut;
-    *s_counterOut = 0;
+    memcpy(tmp, s_inQ, s_counterIn * sizeof(int));
+    memcpy(s_inQ, s_outQ, s_counterOut * sizeof(int));
+    memcpy(s_outQ, tmp, s_counterIn * sizeof(int));
+    s_counterIn = s_counterOut;
+    s_counterOut = 0;
 }
 
+__global__ void breitensucheGPU(int startingNode, const int *C, const int *R, const int rSize, const int cSize, int *distance) {
+    const int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
-__global__ void breitensucheGPU(
-    int startingNode, const int *C,
-        const int *R, const int rSize, 
-        const int cSize, int *distance
-    )
-{
-    //size of shared memory?
-    //shared memeory ist abhängig von Blocks
-    // __shared__ int s_inQ[MAX_QUEUE_SIZE];
-    // __shared__ int s_outQ[MAX_QUEUE_SIZE];
-    __shared__ int * s_inQ;
-    __shared__ int * s_outQ;
-
-
-
+    __shared__ int s_inQ[MAX_QUEUE_SIZE];
+    __shared__ int s_outQ[MAX_QUEUE_SIZE];
     __shared__ int s_counterIn;
     __shared__ int s_counterOut;
     __shared__ int s_iteration;
 
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    
     if (tid == 0) {
-        //wie macht man malloc in kernel, sodass die Speicher in shared Memory liegen.
-        s_inQ = (int*) malloc(MAX_QUEUE_SIZE * sizeof(int));
-        s_outQ = (int*) malloc(MAX_QUEUE_SIZE * sizeof(int));
         s_inQ[0] = startingNode;
         s_counterIn = 1;
         distance[startingNode] = 0;
         s_iteration = 0;
     }
-    //bezieht sich nur auf einem Block
-    __syncthreads();
-    
-    //probiere while in host zu lagern
-    while (s_counterIn > 0) {
-        if (tid < s_counterIn) {
-            int current_node = s_inQ[tid];
-            for (int i = R[current_node]; i < R[current_node + 1]; i++) {
-                int new_node = C[i];
+
+    while (true) {
+        int items_processed_by_thread = 0;
+        for (int i = tid; i < s_counterIn; i += blockDim.x * gridDim.x) {
+            const int current_node = s_inQ[i];
+            for (int j = R[current_node]; j < R[current_node + 1]; j++) {
+                const int new_node = C[j];
                 if (distance[new_node] == INT_MAX) {
                     distance[new_node] = distance[current_node] + 1;
-                    int pos = atomicAdd(&s_counterOut, 1);
+                    const int pos = atomicAdd(&s_counterOut, 1);
                     s_outQ[pos] = new_node;
+                    items_processed_by_thread++;
                 }
             }
         }
-        __syncthreads();
+
+        
+        
+        // Anzahl alle Threads in alle Blocks
+        const int threads_in_block = blockDim.x * gridDim.x;
+
+        const int total_threads = threads_in_block * gridDim.y;
+        const int threads_to_sync = min(s_counterIn, total_threads);
+        //Wenn GPU nicht zu viel Resource hat?????
+        const int threads_synced = __syncthreads_count(threads_to_sync);
+        if (threads_synced == 0) break;
+
         if (tid == 0) {
-            s_iteration += 1;
-            
-            swapQueues(&s_inQ, &s_outQ, &s_counterIn, &s_counterOut);
+            s_iteration++;
+            swapQueues(s_inQ, s_outQ, s_counterIn, s_counterOut);
         }
         __syncthreads();
     }
-    __syncthreads();
 }
 
-// if (tid == 0) {
-//             s_iteration += 1;
-//     for (int i = 0; i < s_counterIn; i++) {
-//         s_outQ[i] = s_inQ[i];
-//     }
-//         s_counterOut = s_counterIn;
-//         s_counterIn = 0;
-// }
 
 
 //--------------------------------------------------------------------------------------------
@@ -190,8 +168,8 @@ int main() {
     cudaMemcpy(dev_C, cage15.C, cSize, cudaMemcpyHostToDevice);
     cudaMemcpy(dev_Distance, distanceCage15, distinationSize, cudaMemcpyHostToDevice);
 
-
-    breitensucheGPU<<<blockSize, cage15.rSize>>>(
+    printf(":========== %d\n", cage15.rSize);
+    breitensucheGPU<<<2, 8>>>(
         startingNode, dev_C, dev_R, cSize, 
         rSize, dev_Distance
     );
@@ -241,6 +219,8 @@ void readLine(string line,  int *source, int *destination ,string deli = " ")
     end = line.find(deli, start);
     *source = stoi(line.substr(start, end - start));
 }
+
+
 
 //read graph in Matrix Market format
 // format: <destination> <source> <weight>
@@ -309,3 +289,81 @@ CSR_Format readGraph(string path) {
 }
 
 
+
+
+
+// #define BLOCK_SIZE 256
+// #define MAX_NODES_PER_BLOCK 32
+
+// __device__ void enqueue(int node, int* queue, int& queueSize, int* distance)
+// {
+//     // Use an atomic operation to update the distance array to avoid race conditions
+//     atomicMin(&distance[node], distance[queue[queueSize-1]]+1);
+//     queue[queueSize++] = node;
+// }
+
+// __global__ void breitensucheGPU(int startingNode, int* C, int* R, int C_size, int R_size, int* distance, int* queue)
+// {
+//     __shared__ int sC[MAX_NODES_PER_BLOCK];
+//     __shared__ int sR[MAX_NODES_PER_BLOCK+1];
+
+//     int tIndex = blockIdx.x * blockDim.x + threadIdx.x;
+//     int queueSize = 0;
+//     if (tIndex == 0) {
+//         for (int i = 0; i < R_size-1; i++) {
+//             distance[i] = INT_MAX;
+//         }
+//         distance[startingNode] = 0;
+//         queue[queueSize++] = startingNode;
+//     }
+//     __syncthreads();
+
+//     int sQueueSize = 0;
+//     int sQueue[MAX_NODES_PER_BLOCK];
+//     sQueue[sQueueSize++] = queue[tIndex];
+//     while (sQueueSize > 0) {
+//         // Load the current node and its neighbors into shared memory
+//         int currentNode = sQueue[--sQueueSize];
+//         if (threadIdx.x < MAX_NODES_PER_BLOCK) {
+//             sC[threadIdx.x] = C[R[currentNode]+threadIdx.x];
+//             if (threadIdx.x == MAX_NODES_PER_BLOCK-1) {
+//                 sR[threadIdx.x+1] = R[currentNode+1];
+//             }
+//         }
+//         __syncthreads();
+
+//         // Explore the neighbors of the current node
+//         for (int i = 0; i < sR[threadIdx.x+1]-sR[threadIdx.x]; i++) {
+//             int neighbor = sC[i];
+//             if (distance[neighbor] == INT_MAX) {
+//                 enqueue(neighbor, queue, queueSize, distance);
+//             }
+//         }
+//         __syncthreads();
+//     }
+// }
+
+// __host__ void breitensucheCUDA(int startingNode, int* C, int* R, int C_size, int R_size, int* distance, int* queue)
+// {
+//     int numBlocks = (R_size-1 + BLOCK_SIZE-1) / BLOCK_SIZE;
+//     breitensucheGPU<<<numBlocks, BLOCK_SIZE>>>(startingNode, C, R, C_size, R_size, distance, queue);
+//     cudaDeviceSynchronize();
+// }
+
+
+// __host__ void breitensucheCUDA(
+//     int startingNode, const int *C,
+//         const int *R, int rSize, 
+//         const int cSize, int *distance
+//     )
+// {
+
+//     const int MAX_THREADS_PER_BLOCK = 1024;
+//     int numThreads = min(rSize, MAX_THREADS_PER_BLOCK);
+//     int numBlocks = (rSize-1 + numThreads-1) / numThreads;
+
+//     breitensucheGPU<<<numBlocks, numThreads>>>(startingNode, C, R, 
+//         rSize, cSize, distance
+//     );
+//     cudaDeviceSynchronize();
+// }
