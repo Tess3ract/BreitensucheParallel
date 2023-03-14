@@ -105,7 +105,13 @@ void run(){
 
     copyDataHostToDevice(graphData, cage15, distanceCage15);
 
+
+    auto start = chrono::high_resolution_clock::now(); //save start time
     breitensucheCUDA(startingNode, graphData, devQueueData, sizeInt);
+    auto stop = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<chrono::microseconds>(stop - start);
+    double duration_mili = duration.count()/60000.0;
+    cout <<  "Die Laufzeit der Funktion ist " << duration_mili/1000.0 << " Mikrosekunden.\n";
 
     copyDataDeviceToHost(distanceCage15, graphData, cage15);
 
@@ -128,11 +134,6 @@ void breitensucheCUDA(int startingNode, GraphData graphData, QueueData queueData
         "cudaMemcpy startingNode => d_inQ failed"
     );
 
-    // Erstellt einen CUDA-Stream
-    //Es ermöglicht Datenübertragungs- und Kernelausführungsoperationen zu überlappen
-    cudaStream_t stream;
-    cudaStreamCreate(&stream);
-
     // Setzt den Eingangs- und Ausgangszähler
     *queueData.counterIn = 1;
     *queueData.counterOut = 0;
@@ -151,7 +152,6 @@ void breitensucheCUDA(int startingNode, GraphData graphData, QueueData queueData
         // Vertauscht die Eingangs- und Ausgangswarteschlange sowie setzt die counterIn und counterOut
         swapQueues(&queueData.inQ, &queueData.outQ, queueData.counterIn, queueData.counterOut);
     }
-    cudaStreamDestroy(stream);
 }
 
 
