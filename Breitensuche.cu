@@ -24,7 +24,7 @@
 #define BLOCK_SIZE 256
 #define MAX_NODES_PER_BLOCK 32
 #define QUEUE_SIZE 256
-#define MAX_THREADS_PER_BLOCK 1024
+#define MAX_THREADS_PER_BLOCK 2
 
 using namespace std;
 
@@ -85,44 +85,80 @@ int main() {
 }
 
 
+/**
+ * @brief Liest einen Graphen aus einer Datei ein, initialisiert die benötigten Datenstrukturen 
+ *        und führt eine Breitensuche auf dem Graphen unter Verwendung von CUDA durch.
+ * 
+ * Die Funktion liest einen Graphen aus einer Matrix Market-Datei ein, initialisiert benötigte Datenstrukturen 
+ * und führt eine Breitensuche auf dem Graphen unter Verwendung von CUDA durch. Die Breitensuche wird solange 
+ * durchgeführt, bis alle erreichbaren Knoten vom Startknoten aus besucht wurden. Die Distanz jedes Knotens zum 
+ * Startknoten wird in einem Array gespeichert, welches am Ende ausgegeben wird.
+ * 
+ * @return void
+ */
 void run(){
 
+    // Lese den Graphen aus einer Datei in CSR_Format ein.
     // CSR_Format  cage15 = readGraph("Beispielgraph.mtx");
     CSR_Format  cage15 = readGraph("cage15/cage15.mtx");
     cout<< "The graph has been read successfully\n";
 
+    // Startknoten der Breitensuche festlegen.
     const int startingNode = 1;   
     const int sizeInt = sizeof(int);
 
+    // Reserviere Speicher für Graphdaten und Warteschlangendaten auf der GPU.
     GraphData graphData = allocateGraphData(cage15, sizeInt);
     QueueData devQueueData = allocateQueueData(MAX_QUEUE_SIZE, sizeInt);
     
-    //host allocation
+    // Reserviere Speicher für die Distanzinformationen auf dem Host.
     unique_ptr<int[]> distanceCage15(new int[cage15.rSize - 1]);
+    // Setze alle Distanzen auf "unendlich" (INT_MAX).
     fill(distanceCage15.get(), distanceCage15.get() + cage15.rSize - 1, INT_MAX);
+    // Setze die Distanz zum Startknoten auf 0.
     distanceCage15[startingNode] = 0;
 
-
+    // Kopiere alle relevanten Daten vom Host auf die GPU.
     copyDataHostToDevice(graphData, cage15, distanceCage15);
 
-
+    // Starte die Zeitmessung.
     auto start = chrono::high_resolution_clock::now(); //save start time
+
+    // Führe die Breitensuche auf der GPU aus.
     breitensucheCUDA(startingNode, graphData, devQueueData, sizeInt);
+
+     // Stoppe die Zeitmessung.
     auto stop = chrono::high_resolution_clock::now();
     auto duration = chrono::duration_cast<chrono::microseconds>(stop - start);
     double duration_mili = duration.count()/60000.0;
     cout <<  "Die Laufzeit der Funktion ist " << duration_mili/1000.0 << " Mikrosekunden.\n";
 
+    // Kopiere die Distanzinformationen von der GPU zurück auf den Host.
     copyDataDeviceToHost(distanceCage15, graphData, cage15);
 
+    // Gib die Distanzinformationen aus.
     printDistance(distanceCage15.get(), 15);
 
+    // Gib den Speicher auf der GPU frei.
     freeGraphData(graphData);
     freeQueueData(devQueueData);
     
 
 }
 
+/**
+ * @brief Führt eine Breitensuche auf dem gegebenen Graphen unter Verwendung der CUDA-Technologie durch.
+ * 
+ * Die Funktion verwendet eine Queue, um die Knoten zu verfolgen, die während der Breitensuche besucht werden sollen.
+ * Die Breitensuche wird iterativ durchgeführt, wobei in jeder Iteration die Knoten bearbeitet werden, die sich in der
+ * Eingangs-Queue befinden. Die Knoten, die von einem besuchten Knoten erreicht werden können, werden zur Ausgangs-Queue
+ * hinzugefügt, um in der nächsten Iteration verarbeitet zu werden.
+ *
+ * @param startingNode Startknoten für die Breitensuche.
+ * @param graphData Die Struktur, die die Graphendaten auf dem Gerät enthält.
+ * @param queueData Die Struktur, die die Queue-Daten auf dem Gerät enthält.
+ * @param sizeInt Die Größe eines int-Datentyps in Byte.
+ */
 void breitensucheCUDA(int startingNode, GraphData graphData, QueueData queueData, int sizeInt){
 
     int numThreads = 0;
@@ -154,10 +190,21 @@ void breitensucheCUDA(int startingNode, GraphData graphData, QueueData queueData
     }
 }
 
-
+/**
+ * @brief Eine CUDA-Kernel-Funktion, die die Breitensuche auf einer Teilmenge des Graphen durchführt.
+ * 
+ * Die Funktion wird von der breitensucheCUDA-Funktion aufgerufen, um die Breitensuche auf einer Teilmenge des Graphen
+ * durchzuführen. Jeder Thread bearbeitet einen Knoten, der sich in der Eingangs-Queue befindet, und fügt seine nicht
+ * besuchten Nachbarn zur Ausgangs-Queue hinzu.
+ * 
+ * @param startingNode Startknoten für die Breitensuche.
+ * @param graphData Die Struktur, die die Graphendaten auf dem Gerät enthält.
+ * @param queueData Die Struktur, die die Queue-Daten auf dem Gerät enthält.
+ */
 __global__ void breitensucheGPU(
-    int startingNode, GraphData graphData, QueueData queueData ){
-    
+    int startingNode, GraphData graphData, QueueData queueData )
+    {   
+        
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     
     if (tid < *queueData.counterIn) {
@@ -176,7 +223,13 @@ __global__ void breitensucheGPU(
     __syncthreads();
 }
 
-
+/**
+ * Kopiert Graphdaten und Distanzdaten vom Host zum Gerät.
+ *
+ * @param graphData die Gerätedatenstruktur für den Graphen
+ * @param csrFormat die CSR-Datenstruktur für den Graphen
+ * @param distanceCage15 der Speicher für die Distanzwerte
+ */
 void copyDataHostToDevice(GraphData& graphData, const CSR_Format& csrFormat, const unique_ptr<int[]>& distanceCage15) {
     const int sizeInt = sizeof(int);
     const int distinationSize = sizeInt * (csrFormat.rSize - 1);
@@ -186,7 +239,13 @@ void copyDataHostToDevice(GraphData& graphData, const CSR_Format& csrFormat, con
     cudaMemcpyAsync(graphData.dev_Distance, distanceCage15.get(), distinationSize, cudaMemcpyHostToDevice);
 }
 
-
+/**
+ * Kopiert Distanzdaten vom Gerät zum Host.
+ *
+ * @param distanceCage15 der Speicher für die Distanzwerte
+ * @param graphData die Gerätedatenstruktur für den Graphen
+ * @param csrFormat die CSR-Datenstruktur für den Graphen
+ */
 void copyDataDeviceToHost(unique_ptr<int[]>& distanceCage15, const GraphData& graphData, const CSR_Format& csrFormat) {
     const int sizeInt = sizeof(int);
     const int distinationSize = sizeInt * (csrFormat.rSize - 1);
@@ -194,6 +253,12 @@ void copyDataDeviceToHost(unique_ptr<int[]>& distanceCage15, const GraphData& gr
 }
 
 
+/**
+ * @brief Allokiert Geräte-Speicher für Graphdaten (CSR-Format)
+ * @param graph CSR-Format des Graphen
+ * @param sizeInt Größe eines int-Datentyps
+ * @return GraphData-Struktur, die den allokierten Speicher enthält
+ */
 GraphData allocateGraphData(CSR_Format &graph, int sizeInt) {
     GraphData data;
     data.rSize = graph.rSize * sizeInt;
@@ -204,12 +269,19 @@ GraphData allocateGraphData(CSR_Format &graph, int sizeInt) {
     return data;
 }
 
+/**
+ * @brief Allokiert Geräte-Speicher für die Queue-Daten der Breitensuche
+ * @param queueSize Größe der Queue (in int-Einheiten)
+ * @param sizeInt Größe eines int-Datentyps
+ * @return QueueData-Struktur, die den allokierten Speicher enthält
+ */
 QueueData allocateQueueData(int queueSize, int sizeInt){
     QueueData devQueueData;
-    // Allocate device memory for the queue data
+    // Gerätespeicher für die Queue-Daten allokiert
     checkCudaError(cudaMalloc(&devQueueData.inQ, queueSize * sizeInt), "cudaMalloc d_inQ failed");
     checkCudaError(cudaMalloc(&devQueueData.outQ, queueSize * sizeInt), "cudaMalloc d_outQ failed");
 
+    // Gerätespeicher für die Counter-Daten allokiert
     checkCudaError(cudaMallocManaged(&devQueueData.counterIn, sizeInt), "cudaMalloc d_counterIn failed");
     checkCudaError(cudaMemset(devQueueData.counterIn, 0, sizeInt), "cudaMemset devQueueData.counterIn failed");
     checkCudaError(cudaMallocManaged(&devQueueData.counterOut, sizeInt), "cudaMalloc d_counterOut failed");
@@ -217,12 +289,23 @@ QueueData allocateQueueData(int queueSize, int sizeInt){
     return devQueueData;
 }
 
+
+/**
+ * @brief Gibt die auf dem Device allokierten Speicher für den Graphen frei
+ *
+ * @param graphData GraphData Struktur, die den allokierten Speicher enthält
+ */
 void freeGraphData(GraphData &graphData){
     cudaFree(graphData.dev_C);
     cudaFree(graphData.dev_R);
     cudaFree(graphData.dev_Distance);
 }
 
+/**
+ * @brief Gibt den auf dem Device allokierten Speicher für die Queue-Daten frei
+ *
+ * @param queueData QueueData Struktur, die den allokierten Speicher enthält
+ */
 void freeQueueData(QueueData &queueData){
     cudaFree(queueData.counterIn);
     cudaFree(queueData.counterOut);
@@ -230,7 +313,12 @@ void freeQueueData(QueueData &queueData){
     cudaFree(queueData.outQ);
 }
 
-
+/**
+ * @brief Gibt die Distanzwerte eines Graphen aus, die von einer bestimmten Quelle aus berechnet wurden
+ * 
+ * @param distances Pointer auf ein Array von Distanzwerten
+ * @param size Größe des Arrays
+ */
 void printDistance(const int *distances, const int size){
     for (int i=0; i< size; ++i){
         printf("distance %d = %d\n", i, distances[i]);
@@ -238,6 +326,11 @@ void printDistance(const int *distances, const int size){
     printf("\n");
 }
 
+/**
+ * @brief Gibt die Kantenliste eines Graphen aus, die im CSR-Format vorliegt.
+ * 
+ * @param cage15 Kantenliste im CSR-Format
+ */
 void printGraph(CSR_Format cage15){
     printf("\n");
 
@@ -252,8 +345,14 @@ void printGraph(CSR_Format cage15){
 }
 
 
-
-//read current line and store it in source and destination
+/**
+ * @brief Liest eine Zeile in einer Datei in Matrix-Markt-Format ein und speichert die Werte in source und destination
+ *
+ * @param line Eingabezeile in Matrix-Markt-Format (z.B. "1 2 10")
+ * @param source Pointer auf den Speicherort, an dem die Quellknoten-ID gespeichert werden soll
+ * @param destination Pointer auf den Speicherort, an dem die Zielknoten-ID gespeichert werden soll
+ * @param deli Trennzeichen zwischen den Werten (Standardwert: " ")
+ */
 void readLine(string line,  int *source, int *destination ,string deli = " ")
 {
     int start = 0;
@@ -266,9 +365,13 @@ void readLine(string line,  int *source, int *destination ,string deli = " ")
 
 
 
-//read graph in Matrix Market format
-// format: <destination> <source> <weight>
-// lines have to be sorted by source ascending
+/**
+ * @brief Liest eine Graphdatei in Matrix-Markt-Format ein und wandelt sie in den CSR-Format um.
+ *        Die Zeilen der Graphdatei müssen nach Quellknoten aufsteigend sortiert sein.
+ *
+ * @param path Pfad zur Graphdatei in Matrix-Markt-Format
+ * @return CSR_Format-Struktur, die den eingelesenen Graphen im CSR-Format enthält.
+ */
 CSR_Format readGraph(string path) {
     ifstream Preparation(path);
     string line;
@@ -335,6 +438,14 @@ CSR_Format readGraph(string path) {
 }
 
 
+/**
+ * @brief Tauscht den Inhalt zweier Queues und aktualisiert die Anzahl der Elemente.
+ * 
+ * @param d_inQ Ein Zeiger auf den Zeiger des Input-Queues auf dem Device.
+ * @param d_outQ Ein Zeiger auf den Zeiger des Output-Queues auf dem Device.
+ * @param s_counterIn Ein Zeiger auf die Variable, die die Anzahl der Elemente im Input-Queue enthält.
+ * @param s_counterOut Ein Zeiger auf die Variable, die die Anzahl der Elemente im Output-Queue enthält.
+ */
 void swapQueues(int **d_inQ, int **d_outQ, int *s_counterIn, int *s_counterOut) {
     
     int *temp;
@@ -346,6 +457,12 @@ void swapQueues(int **d_inQ, int **d_outQ, int *s_counterIn, int *s_counterOut) 
     *s_counterOut = 0;   
 }
 
+/**
+ * @brief Prüft, ob der übergebene cudaError_t-Wert erfolgreich ist. Wenn nicht, wird eine Fehlermeldung ausgegeben und das Programm wird beendet.
+ * 
+ * @param error Der cudaError_t-Wert, der überprüft wird.
+ * @param message Eine kurze Nachricht, die beschreibt, welche Operation durchgeführt wurde, als der Fehler aufgetreten ist.
+ */
 void checkCudaError(cudaError_t error, const char* message) {
     if (error != cudaSuccess) {
         fprintf(stderr, "%s: %s\n", message, cudaGetErrorString(error));
@@ -353,6 +470,12 @@ void checkCudaError(cudaError_t error, const char* message) {
     }
 }
 
+/**
+ * @brief Funktion zum Überprüfen, ob der Host genügend Speicherplatz für ein Array bereitstellen konnte.
+ * 
+ * @param ptr Der Pointer zum Array.
+ * @param ptrName Der Name des Pointers, um den Fehler auf der Konsole auszugeben.
+ */
 void checkHostAllocation(void *ptr, const char* ptrName){
     if (!ptr) {
         fprintf(stderr, "Error: host memory allocation failed for %s.\n", ptrName);
