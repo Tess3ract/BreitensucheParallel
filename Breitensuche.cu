@@ -1,8 +1,13 @@
 /**
- * compile: nvcc Breintensuche.cu
- * 
-*/
-
+ * @brief CUDA-Breitensuche auf einem Graphen
+ *
+ * Diese Implementierung führt eine Breitensuche auf einem Graphen durch, der in der Matrix-Markt-Dateiformat gespeichert ist.
+ * Die Implementierung verwendet CUDA und führt die Breitensuche auf der GPU aus.
+ * Die Distanz jedes Knotens zum Startknoten wird in einem Array gespeichert, welches am Ende ausgegeben wird.
+ *
+ * @author Moritz Niederer und Sayed Mustafa Sajadi
+ * @date 24.03.2023
+ */
 
 
 
@@ -28,6 +33,7 @@
 
 using namespace std;
 
+// Definition einer Klasse zur Verwendung des CSR-Formats.
 class CSR_Format {
     public:
     int *C;
@@ -36,6 +42,7 @@ class CSR_Format {
     int rSize;
 };
 
+// Definition einer Struktur zur Verwendung der Daten auf der GPU.
 typedef struct {
     long unsigned rSize;
     long unsigned cSize;
@@ -44,7 +51,7 @@ typedef struct {
     int *dev_Distance;
 } GraphData;
 
-
+// Definition einer Struktur zur Verwendung der Warteschlangendaten auf der GPU.
 struct QueueData {
     int *inQ;
     int *outQ;
@@ -52,6 +59,7 @@ struct QueueData {
     int *counterOut;
 };
 
+// Funktionsprototypen.
 void run();
 CSR_Format readGraph(string path);
 void printGraph(CSR_Format cage15);
@@ -70,10 +78,8 @@ void copyDataDeviceToHost(unique_ptr<int[]>& distanceCage15, const GraphData& gr
 void copyDataHostToDevice(GraphData& graphData, const CSR_Format& csrFormat, const unique_ptr<int[]>& distanceCage15);
 
 
+// CUDA-Kernel zum Durchführen der Breitensuche.
 __global__ void breitensucheGPU(int startingNode, GraphData graphData, QueueData queueData);
-__device__ int queueDev[QUEUE_SIZE];
-__device__ int head = 0;
-__device__ int tail = 0;
 
 
 //--------------------------------------------------------------------------------------------
