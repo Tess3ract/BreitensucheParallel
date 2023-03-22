@@ -82,7 +82,9 @@ void copyDataHostToDevice(GraphData& graphData, const CSR_Format& csrFormat, con
 __global__ void breitensucheGPU(int startingNode, GraphData graphData, QueueData queueData);
 
 
-//--------------------------------------------------------------------------------------------
+/**
+ * ---------------------------Main------------------------------------------
+ */
 int main() {
 
     run();
@@ -148,8 +150,6 @@ void run(){
     // Gib den Speicher auf der GPU frei.
     freeGraphData(graphData);
     freeQueueData(devQueueData);
-    
-
 }
 
 /**
@@ -165,6 +165,8 @@ void run(){
  * @param queueData Die Struktur, die die Queue-Daten auf dem Gerät enthält.
  * @param sizeInt Die Größe eines int-Datentyps in Byte.
  */
+
+
 void breitensucheCUDA(int startingNode, GraphData graphData, QueueData queueData, int sizeInt){
 
     int numThreads = 0;
